@@ -1614,10 +1614,17 @@ body {
    (500) so nothing in the shell can cover the title and close button — which is
    what happened when it was docked under the 48px header at z-index 400.
    The scrim value matches the house RNS modal so the two read as one pattern. */
-.sheet-scrim { position:fixed; top:0; right:0; bottom:0; left:0; z-index:700; background:rgba(0,0,0,0.5); }
+.sheet-scrim { position:fixed; top:0; right:0; bottom:0; left:0; z-index:700; background:rgba(0,0,0,0.5);
+               opacity:0; transition:opacity 0.22s ease; }
+.sheet-scrim.is-open { opacity:1; }
 .sheet { position:fixed; top:0; right:0; bottom:0; width:352px; z-index:701;
          background:var(--brilliant-white);
-         box-shadow:-8px 0 28px rgba(0,0,0,0.18); display:flex; flex-direction:column; }
+         box-shadow:-8px 0 28px rgba(0,0,0,0.18); display:flex; flex-direction:column;
+         transform:translateX(100%); transition:transform 0.22s ease; }
+.sheet.is-open { transform:translateX(0); }
+@media (prefers-reduced-motion: reduce) {
+  .sheet-scrim, .sheet { transition-duration:0.001ms; }
+}
 /* Scrimmed content cannot show the row count updating, so the sheet's own footer
    count is now the only live feedback while filtering. */
 body.sheet-open { overflow:hidden; }
@@ -1783,7 +1790,7 @@ body.sheet-open { overflow:hidden; }
       <div class="news-filters">
         <button class="news-filter" data-f="beat"    onclick="toggleFilter('beat')" aria-pressed="false"><span class="nf-tick msym" aria-hidden="true">check</span>Beats <span class="nf-n" id="nf-beat"></span></button>
         <button class="news-filter" data-f="miss"    onclick="toggleFilter('miss')" aria-pressed="false"><span class="nf-tick msym" aria-hidden="true">check</span>Misses <span class="nf-n" id="nf-miss"></span></button>
-        <button class="news-filter" data-f="covered" onclick="toggleFilter('covered')" aria-pressed="false"><span class="nf-tick msym" aria-hidden="true">check</span>Previously covered <span class="nf-n" id="nf-covered"></span></button>
+        <button class="news-filter" data-f="notcovered" onclick="toggleFilter('notcovered')" aria-pressed="false"><span class="nf-tick msym" aria-hidden="true">check</span>Never covered <span class="nf-n" id="nf-notcovered"></span></button>
         <button class="news-allfilters" id="nf-all" onclick="openSheet()" aria-haspopup="dialog">
           <span class="msym" aria-hidden="true">tune</span>
           News types <span class="nf-badge" id="nf-badge" hidden></span>
@@ -1847,6 +1854,44 @@ body.sheet-open { overflow:hidden; }
       <span class="modal-nav-count" id="modal-count"></span>
       <button class="modal-nav-btn" id="modal-next" onclick="navigateRNS(1)">Next &#8594;</button>
     </div>
+  </div>
+</div>
+
+<div class="mini-report-popover" id="mini-report-popover" onmouseenter="cancelHidePopover()" onmouseleave="scheduleHidePopover()">
+  <div class="mrp-main">
+    <div class="mrp-left">
+      <div class="mrp-name-row"><span class="mrp-name" id="mrp-name"></span><span class="mrp-tick" id="mrp-tick"></span></div>
+      <div class="mrp-price-row"><span class="mrp-price" id="mrp-price"></span><span class="mrp-change" id="mrp-change"></span></div>
+      <div class="mrp-tags" id="mrp-tags"></div>
+      <div class="mrp-desc" id="mrp-desc"></div>
+      <div class="mrp-stats">
+        <div class="mrp-stats-col">
+          <div class="mrp-stat-row"><span class="mrp-stat-label">Mkt Cap</span><span class="mrp-stat-value" id="mrp-mktcap"></span></div>
+          <div class="mrp-stat-row"><span class="mrp-stat-label">Sales</span><span class="mrp-stat-value" id="mrp-sales"></span></div>
+          <div class="mrp-stat-row"><span class="mrp-stat-label">PE (ttm)</span><span class="mrp-stat-value" id="mrp-pe"></span></div>
+          <div class="mrp-stat-row"><span class="mrp-stat-label">Yield (ttm)</span><span class="mrp-stat-value" id="mrp-yield"></span></div>
+        </div>
+        <div class="mrp-stats-col">
+          <div class="mrp-stat-row"><span class="mrp-stat-label">Quality</span><span class="sr" id="mrp-quality"></span></div>
+          <div class="mrp-stat-row"><span class="mrp-stat-label">Value</span><span class="sr" id="mrp-value"></span></div>
+          <div class="mrp-stat-row"><span class="mrp-stat-label">Momentum</span><span class="sr" id="mrp-momentum"></span></div>
+          <div class="mrp-stat-row"><span class="mrp-stat-label">StockRank</span><span class="sr" id="mrp-stockrank"></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="mrp-right">
+      <div class="mrp-chart-legend">1Y price</div>
+      <svg class="mrp-chart-svg" viewBox="0 0 220 110" preserveAspectRatio="none">
+        <path id="mrp-chart-fill" fill="rgba(71,118,186,0.10)" stroke="none"></path>
+        <path id="mrp-chart-line" fill="none" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"></path>
+      </svg>
+      <div class="mrp-chart-months" id="mrp-chart-months"></div>
+    </div>
+  </div>
+  <div class="mrp-buttons">
+    <a class="mrp-btn mrp-btn-primary" href="#" onclick="return false;">StockReport&trade;</a>
+    <a class="mrp-btn mrp-btn-secondary" href="#" onclick="return false;">Chart</a>
+    <a class="mrp-btn mrp-btn-secondary" href="#" onclick="return false;">Add to Folio</a>
   </div>
 </div>
 
@@ -2208,16 +2253,32 @@ function toggleParent(pid) {
 function resetCats() { cats = new Set(LEAVES); renderTree(); render(); }
 
 function openSheet() {
-  document.getElementById('sheet').hidden = false;
-  document.getElementById('sheet-scrim').hidden = false;
+  const sheet = document.getElementById('sheet');
+  const scrim = document.getElementById('sheet-scrim');
+  sheet.hidden = false;
+  scrim.hidden = false;
+  // Force a layout flush between un-hiding and adding the open class — without
+  // it the browser coalesces both style changes into one paint and the slide
+  // never runs, it just appears.
+  sheet.offsetHeight;
+  sheet.classList.add('is-open');
+  scrim.classList.add('is-open');
   document.body.classList.add('sheet-open');
   renderTree();
   document.querySelector('#sheet-body .cat-box').focus();
 }
 function closeSheet() {
-  document.getElementById('sheet').hidden = true;
-  document.getElementById('sheet-scrim').hidden = true;
+  const sheet = document.getElementById('sheet');
+  const scrim = document.getElementById('sheet-scrim');
+  sheet.classList.remove('is-open');
+  scrim.classList.remove('is-open');
   document.body.classList.remove('sheet-open');
+  // Wait for the slide-out to finish before pulling it from layout — a
+  // transitionend listener plus a timeout fallback in case the transition
+  // never fires (e.g. prefers-reduced-motion collapses its duration to ~0).
+  const finish = () => { sheet.hidden = true; scrim.hidden = true; };
+  sheet.addEventListener('transitionend', finish, { once: true });
+  setTimeout(finish, 260);
   document.getElementById('nf-all').focus();
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !document.getElementById('sheet').hidden) closeSheet(); });
@@ -2231,7 +2292,7 @@ function rowsFor() {
   // An analyst pick is a different axis, so it narrows whatever is already showing.
   const verdicts = [...filters].filter(f => f === 'beat' || f === 'miss');
   if (verdicts.length) r = r.filter(d => verdicts.includes(d.earn));
-  if (filters.has('covered')) r = r.filter(d => d.rate);
+  if (filters.has('notcovered')) r = r.filter(d => !d.rate);
   const cap = s => { const n = parseFloat(s.replace(/[£,]/g,'')); return s.includes('bn') ? n*1000 : n; };
   // The column runs the full scale, not just the three directions: magnitude has to
   // rank too, or Big beat, Beat and Small beat all sort as one block.
@@ -2300,7 +2361,8 @@ function render() {
     const showSummary = d.cat === 'results' || d.cat === 'trading';
     return `<tr>
       <td class="nw-time">${d.time}</td>
-      <td><a class="nw-co" href="${d.url}" title="StockReport for ${d.n}">${d.n}</a><span class="nw-sub">${d.t}</span></td>
+      <td><a class="nw-co" href="${d.url}" title="StockReport for ${d.n}"
+        onmouseenter="scheduleShowPopover('${d.t}', this)" onmouseleave="scheduleHidePopover()">${d.n}</a><span class="nw-sub">${d.t}</span></td>
       <td>
         <button class="nw-title" onclick="openRNS('${d.t}')">${d.rl}</button>
         ${showSummary ? `<p class="nw-summary">${d.rs}</p>` : ''}
@@ -2350,7 +2412,7 @@ function render() {
       <button class="news-excluded-link" onclick="clearFilters()">Reset all filters</button>
     </td></tr>`;
 
-  const covered = all.filter(d => d.rate).length;
+  const notCovered = all.filter(d => !d.rate).length;
   // Badge = news types selected. It highlights only when something is deselected,
   // so the default state reads as a count rather than as an alert.
   const hiddenRows = NEWS.filter(d => (tab === 'folio' ? d.folio : true) && !cats.has(d.cat)).length;
@@ -2367,7 +2429,7 @@ function render() {
 
   document.getElementById('nf-beat').textContent    = all.filter(d => d.earn === 'beat').length;
   document.getElementById('nf-miss').textContent    = all.filter(d => d.earn === 'miss').length;
-  document.getElementById('nf-covered').textContent = covered;
+  document.getElementById('nf-notcovered').textContent = notCovered;
   document.getElementById('tabc-folio').textContent  = '(' + NEWS.filter(d => d.folio && cats.has(d.cat)).length + ')';
   document.getElementById('tabc-market').textContent = '(' + NEWS.filter(d => cats.has(d.cat)).length + ')';
   document.getElementById('sc-earn').textContent = sortKey === 'earn' ? (sortDir === 'desc' ? '\u2193' : '\u2191') : '';
@@ -2410,6 +2472,271 @@ function sortBy(k) {
   if (sortKey === k) sortDir = sortDir === 'desc' ? 'asc' : 'desc';
   else { sortKey = k; sortDir = 'desc'; }
   render();
+}
+
+// ── MINI-REPORT HOVER POPOVER ───────────────────────────────────────────────
+// Ported from prototype-v2/index.html, where it was built and wired to the
+// ticker chip. Here it hangs off the company name link (.nw-co) instead, per
+// the brief — same profile data, same seeded-random stats/chart so a given
+// stock always looks the same on repeat hovers.
+
+// One-line company descriptions, keyed by ticker, for every stock in NEWS.
+const STOCK_DESCRIPTIONS = {
+  'AZN':  'A global biopharmaceutical company researching, developing and commercialising prescription medicines, with particular strength in oncology, cardiovascular and respiratory disease.',
+  'BP.':  'An integrated oil and gas major spanning upstream exploration and production, refining, and a growing low-carbon and renewables business.',
+  'GSK':  'A global biopharmaceutical company focused on vaccines, specialty medicines and general medicines, with a growing pipeline in infectious disease and oncology.',
+  'BARC': 'A diversified British bank spanning UK retail and business banking alongside a global corporate and investment bank.',
+  'AAL':  'A diversified mining group producing copper, iron ore, platinum group metals and diamonds (via De Beers) from operations across Africa, South America and Australia.',
+  'TW.':  "One of the UK's largest homebuilders, constructing private and affordable housing across Britain and Spain.",
+  'TPK':  "A builders' merchanting group supplying construction materials to trade and retail customers across the UK.",
+  'TEP':  'Trades as Utility Warehouse, supplying gas, electricity, broadband, mobile and insurance to UK households through a multi-service subscription model.',
+  'CARD': 'A UK specialist retailer of greetings cards, gifts and celebration essentials, trading from stores and online.',
+  'ELCO': 'Develops software for the construction and building products industries, including project collaboration and estimating tools.',
+  'HDD':  'Develops and applies advanced tungsten-carbide coatings that extend the life of components used in oil & gas, aerospace and industrial equipment.',
+  'EMAN': 'Operates a chain of boutique-style cinemas across the UK, positioned as a premium alternative to mainstream multiplexes.',
+  'LIKE': 'A wholesale distributor of flooring and soft furnishings, supplying independent retailers across the UK.',
+  'CBOX': 'A UK franchise retailer of fresh cream celebration cakes, sold through a network of independently owned stores.',
+  'HEAD': "The UK's largest distributor of floorcoverings, supplying independent retailers and contractors nationwide.",
+  'HWDN': 'Supplies kitchens, joinery and hardware to trade builders and developers through a UK-wide network of local depots.',
+  'TSCO': "The UK's largest grocery retailer, operating supermarkets, convenience stores and an online delivery business, alongside operations in Ireland and Central Europe.",
+  'LLOY': 'A UK-focused retail and commercial bank, encompassing the Lloyds, Halifax and Bank of Scotland brands alongside a large mortgage and insurance business.',
+  'RR.':  'Designs and manufactures engines and power systems for civil and defence aerospace, alongside power generation for marine and industrial customers.',
+  'VOD':  'A multinational telecommunications group providing mobile, broadband and enterprise connectivity services across Europe and Africa.',
+  'IMB':  'A global tobacco group manufacturing and marketing cigarettes and next-generation nicotine products across markets worldwide.',
+  'PSN':  "One of the UK's largest homebuilders, constructing private and affordable housing across England, Wales and Scotland.",
+  'SBRY': "The UK's second-largest grocery retailer, operating supermarkets and convenience stores alongside Argos and a financial services arm.",
+  'BT.A': "The UK's largest telecoms provider, spanning fixed broadband and full-fibre infrastructure (Openreach), mobile (EE) and business connectivity.",
+  'CNA':  'The parent of British Gas, supplying energy to UK homes and businesses alongside nuclear generation, energy trading and services operations.',
+  'BTRW': "The UK's largest homebuilder by volume, formed from the merger of Barratt Developments and Redrow, building private and affordable housing nationwide.",
+  'LGEN': 'A UK financial services group spanning retirement and annuities, investment management and life insurance.',
+  'HIK':  'A multinational pharmaceutical group manufacturing generic, branded and injectable medicines, with a strong presence in the US and MENA region.',
+  'SMIN': 'A diversified engineering group spanning detection, medical devices, energy and industrial connectivity businesses worldwide.',
+  'ITRK': 'A global provider of quality assurance and testing, inspection and certification services across industries including consumer goods, industrials and resources.',
+  'BEZ':  "A specialist Lloyd's of London insurer covering cyber, property, marine and specialty risk lines internationally.",
+  'GRG':  'A UK bakery-food-on-the-go retailer, selling sandwiches, savouries and sweet treats through a nationwide chain of shops.',
+  'NXT':  'A UK clothing, footwear and home products retailer trading through stores, catalogue and its online Total Platform, which also hosts other brands.',
+  'BNZL': 'A distribution and outsourcing group supplying non-food consumable products — from packaging to safety equipment — to businesses worldwide.',
+  'FOUR': 'A direct marketer of promotional products, supplying branded merchandise to businesses primarily in North America.',
+  'DPLM': 'A specialist distributor of technical products and services across life sciences, seals and controls markets internationally.',
+  'INCH': 'A global automotive distribution group representing vehicle manufacturers across more than 40 markets worldwide.',
+  'GAMA': 'Provides cloud communications services — including UCaaS and SIP trunking — to businesses across the UK, Germany, Spain and the Benelux.',
+  'XPS':  'A UK pensions consultancy providing actuarial, administration and investment advisory services to corporate pension schemes.',
+  'VTY':  'A UK housebuilder operating a partnerships-led model, developing mixed-tenure housing in partnership with local authorities and housing associations.',
+  'AFX':  'Provides foreign exchange risk management and alternative banking solutions to corporate clients internationally.',
+  'MSLH': 'A UK manufacturer of landscaping and building products, including paving, drainage and natural stone, for domestic and commercial markets.',
+  'FRP':  'A UK business advisory firm providing restructuring, corporate finance, forensic services and debt advisory to companies and lenders.',
+  'CWK':  'A UK food producer specialising in fresh and added-value pork, poultry and convenience food products, supplying major retailers.',
+  'IPX':  'A specialist asset manager investing in companies positioned to benefit from the transition to a more sustainable global economy.',
+  'LGRS': 'Operates a chain of all-day café-bars and Cosy Club restaurants across the UK, trading under a relaxed, neighbourhood-led format.',
+  'WPP':  'A global advertising and marketing services group encompassing creative, media buying, public relations and data-driven communications agencies.',
+  'PZC':  'A consumer goods group behind household and personal care brands including Imperial Leather, Original Source and Carex, with operations across Africa, Asia and Europe.',
+  'SNWS': "The UK's largest newspaper and magazine wholesaler, distributing to independent retailers and major supermarket chains nationwide.",
+  'AO.':  'An online retailer of major domestic appliances and consumer electronics, primarily serving the UK and Germany.',
+  'GAW':  'Designs, manufactures and sells the Warhammer miniature wargaming hobby worldwide, alongside licensing income from film, TV and video game partners.',
+  'CGS':  'Manufactures iron and steel castings and machined components, principally supplying the commercial vehicle and construction equipment industries.',
+  'BBSN': 'A digital media and marketing agency specialising in social media management and performance marketing for sport, entertainment and consumer brands.',
+  'CML':  'Designs and manufactures analogue and mixed-signal semiconductors for the storage, wireless and networking industries.',
+  'SDY':  "One of the UK's largest tool, equipment and plant hire businesses, serving the construction, infrastructure and industrial sectors.",
+  'HSP':  'A diversified industrial services group spanning bulk logistics, land remediation and property development, alongside a growing land bank.',
+  'FEN':  'A wealth management group specialising in managing damages awarded to personal injury and clinical negligence claimants.',
+  'AXL':  'An oil and gas exploration and production company focused on the Llanos and Middle Magdalena basins in Colombia.',
+};
+
+// Deterministic seeded RNG (mulberry32) so each ticker always gets the same
+// fabricated stats/chart rather than a new random look on every hover.
+function _mrpSeedFromString(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) { h = Math.imul(31, h) + str.charCodeAt(i) | 0; }
+  return h >>> 0;
+}
+function _mrpMulberry32(seed) {
+  let a = seed;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function _mrpCapToMillions(capStr) {
+  const n = parseFloat(capStr.replace(/[£,]/g, ''));
+  return capStr.includes('bn') ? n * 1000 : n;
+}
+function _mrpCapBucket(capM) {
+  if (capM >= 2000) return 'Large Cap';
+  if (capM >= 250)  return 'Mid Cap';
+  if (capM >= 50)   return 'Small Cap';
+  return 'Micro Cap';
+}
+// Combines Value/Momentum into a StockRank-style descriptor, mirroring the
+// spirit of Stockopedia's real StockRank Styles without replicating them.
+function _mrpStyleWord(quality, value, momentum) {
+  const hi = 65, lo = 35;
+  if (value >= hi && momentum >= hi) return quality >= hi ? 'Super Stock' : 'Rising Star';
+  if (value >= hi && momentum <= lo) return 'Contrarian';
+  if (value <= lo && momentum >= hi) return 'Momentum Trap';
+  if (value <= lo && momentum <= lo) return 'Value Trap';
+  if (quality >= hi) return 'Standout';
+  return 'Balanced';
+}
+function _fmtMoney(m) {
+  if (m >= 1000) return `£${(m / 1000).toFixed(1)}bn`;
+  return `£${m.toFixed(0)}m`;
+}
+function _fmtPrice(p) { return `${p.toFixed(2)}p`; }
+
+const _stockProfileCache = {};
+
+function getStockProfile(tick) {
+  if (_stockProfileCache[tick]) return _stockProfileCache[tick];
+  const row = NEWS.find(r => r.t === tick);
+  if (!row) return null;
+
+  const rand = _mrpMulberry32(_mrpSeedFromString(tick));
+  const capM = _mrpCapToMillions(row.m);
+  const bucket = _mrpCapBucket(capM);
+
+  // Price: bucketed so larger companies get plausibly higher share prices.
+  let priceRange;
+  if (capM >= 2000) priceRange = [150, 2400];
+  else if (capM >= 250) priceRange = [180, 1100];
+  else if (capM >= 50) priceRange = [30, 260];
+  else priceRange = [3, 90];
+  const price = priceRange[0] + rand() * (priceRange[1] - priceRange[0]);
+  const chAbs = price * (row.ch / 100);
+
+  // A few stocks already have exact revenue/dividend figures stated in this
+  // report's RNS summaries — override the randomised stat so the hover card
+  // doesn't contradict what's on the same page.
+  const STAT_OVERRIDES = {
+    'SNWS': { sales: 156 },
+    'GAW':  { sales: 704, yieldPct: 7.8 },
+    'AO.':  { sales: 1267 },
+  };
+  const override = STAT_OVERRIDES[tick] || {};
+
+  const sales = override.sales !== undefined ? override.sales : capM * (0.35 + rand() * 2.2);
+  const pe = 5 + rand() * 27;
+  const yieldPct = override.yieldPct !== undefined ? override.yieldPct : (rand() < 0.2 ? 0 : rand() * 6.5);
+
+  // Quality/Value/Momentum spread around the existing StockRank so the
+  // numbers feel internally consistent rather than arbitrary.
+  const clamp = n => Math.max(1, Math.min(99, Math.round(n)));
+  const quality  = clamp(row.sr + (rand() - 0.5) * 50);
+  const value    = clamp(row.sr + (rand() - 0.5) * 50);
+  const momentum = clamp(row.sr + (row.ch) * 2 + (rand() - 0.5) * 30);
+
+  const styleWord = _mrpStyleWord(quality, value, momentum);
+  const riskWord = momentum >= 60 || value <= 30 ? 'Adventurous' : 'Conservative';
+
+  // Simple deterministic sparkline: a 20-point random walk nudged so the
+  // overall direction agrees with today's price change.
+  const points = 20;
+  const bias = row.ch > 0 ? 0.55 : row.ch < 0 ? -0.55 : 0;
+  let v = 50 + (rand() - 0.5) * 20;
+  const series = [v];
+  for (let i = 1; i < points; i++) {
+    v += (rand() - 0.5) * 14 + bias * 1.4;
+    v = Math.max(6, Math.min(94, v));
+    series.push(v);
+  }
+  const w = 220, h = 90, top = 6;
+  const stepX = w / (points - 1);
+  const coords = series.map((val, i) => [i * stepX, top + (100 - val) * (h / 100)]);
+  const linePath = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c[0].toFixed(1)},${c[1].toFixed(1)}`).join(' ');
+  const fillPath = `${linePath} L${w.toFixed(1)},${(top + h).toFixed(1)} L0,${(top + h).toFixed(1)} Z`;
+  const allMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const nowMonth = 6; // June, matches this prototype's dated content (17 June 2026)
+  const months = [6, 5, 4, 3, 2, 1, 0].map(back => allMonths[(nowMonth - back + 12) % 12]);
+
+  const profile = {
+    tick, name: row.n, price, chAbs, chPct: row.ch,
+    sr: row.sr, quality, value, momentum,
+    capLabel: row.m, sales, pe, yieldPct,
+    tags: [bucket, riskWord, styleWord],
+    desc: STOCK_DESCRIPTIONS[tick] || `${row.n} is a UK-listed company covered as part of Stockopedia's daily market monitoring.`,
+    linePath, fillPath, months,
+  };
+  _stockProfileCache[tick] = profile;
+  return profile;
+}
+
+// ── show / hide / position ──
+let _mrpShowTimer = null;
+let _mrpHideTimer = null;
+
+function scheduleShowPopover(tick, anchorEl) {
+  cancelHidePopover();
+  clearTimeout(_mrpShowTimer);
+  _mrpShowTimer = setTimeout(() => showStockPopover(tick, anchorEl), 150);
+}
+function scheduleHidePopover() {
+  clearTimeout(_mrpShowTimer);
+  clearTimeout(_mrpHideTimer);
+  _mrpHideTimer = setTimeout(hideStockPopoverNow, 200);
+}
+function cancelHidePopover() {
+  clearTimeout(_mrpHideTimer);
+}
+function hideStockPopoverNow() {
+  const el = document.getElementById('mini-report-popover');
+  if (el) el.classList.remove('open');
+}
+
+function showStockPopover(tick, anchorEl) {
+  const profile = getStockProfile(tick);
+  if (!profile) return;
+  const pop = document.getElementById('mini-report-popover');
+  if (!pop) return;
+
+  document.getElementById('mrp-name').textContent = profile.name;
+  document.getElementById('mrp-tick').textContent = profile.tick;
+  document.getElementById('mrp-price').textContent = _fmtPrice(profile.price);
+
+  const chEl = document.getElementById('mrp-change');
+  const dir = profile.chPct > 0 ? 'up' : profile.chPct < 0 ? 'dn' : 'fl';
+  const arrow = profile.chPct > 0 ? '↑' : profile.chPct < 0 ? '↓' : '';
+  const sign = profile.chPct > 0 ? '+' : '';
+  chEl.className = `mrp-change ${dir}`;
+  chEl.textContent = `${arrow} ${Math.abs(profile.chAbs).toFixed(2)}   ${sign}${profile.chPct.toFixed(1)}%`;
+
+  document.getElementById('mrp-tags').textContent = profile.tags.join(' · ');
+  document.getElementById('mrp-desc').innerHTML = `${profile.desc} <a class="mrp-desc-more" href="#" onclick="return false;">Read more</a>`;
+
+  document.getElementById('mrp-mktcap').textContent = profile.capLabel;
+  document.getElementById('mrp-sales').textContent = _fmtMoney(profile.sales);
+  document.getElementById('mrp-pe').textContent = profile.pe.toFixed(1);
+  document.getElementById('mrp-yield').textContent = profile.yieldPct === 0 ? '—' : `${profile.yieldPct.toFixed(1)}%`;
+
+  const setBadge = (id, val) => {
+    const badgeEl = document.getElementById(id);
+    badgeEl.textContent = val;
+    badgeEl.className = `sr ${srClassNews(val)}`;
+  };
+  setBadge('mrp-quality', profile.quality);
+  setBadge('mrp-value', profile.value);
+  setBadge('mrp-momentum', profile.momentum);
+  setBadge('mrp-stockrank', profile.sr);
+
+  document.getElementById('mrp-chart-line').setAttribute('d', profile.linePath);
+  document.getElementById('mrp-chart-fill').setAttribute('d', profile.fillPath);
+  document.getElementById('mrp-chart-months').innerHTML = profile.months.map(m => `<span>${m}</span>`).join('');
+
+  // Position near the trigger, clamped to stay fully inside the viewport.
+  pop.classList.add('open');
+  const rect = anchorEl.getBoundingClientRect();
+  const popW = pop.offsetWidth;
+  const popH = pop.offsetHeight;
+  const margin = 12;
+  let left = rect.left;
+  let top = rect.bottom + 8;
+  if (left + popW > window.innerWidth - margin) left = window.innerWidth - margin - popW;
+  if (left < margin) left = margin;
+  if (top + popH > window.innerHeight - margin) top = rect.top - popH - 8;
+  if (top < margin) top = margin;
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
 }
 
 // The DMR links here with ?tab=folio so the two cards land on the right side.
