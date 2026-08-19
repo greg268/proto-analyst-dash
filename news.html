@@ -1021,16 +1021,50 @@ body {
   background: var(--stone-grey); border-radius: 8px;
   font-size: 13px; line-height: 20px; color: var(--text-primary);
 }
+.modal-summary-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; }
 .modal-summary-label {
   display: block; font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.07em; color: var(--text-secondary); margin-bottom: 4px;
+  letter-spacing: 0.07em; color: var(--text-secondary);
 }
+.modal-copy-btn {
+  position:relative; display:flex; align-items:center; justify-content:center;
+  width:22px; height:22px; padding:0; border:none; border-radius:5px;
+  background:none; color:var(--text-secondary); cursor:pointer; flex-shrink:0;
+}
+.modal-copy-btn:hover, .modal-copy-btn:focus-visible { background:var(--steel-grey); color:var(--text-primary); }
+.modal-copy-btn .msym { font-size:15px; display:block; }
+.modal-copy-btn.is-copied { color:var(--rating-green-text,#1a7f4e); }
 .modal-meta { display:flex; align-items:center; gap:16px; padding:8px var(--sheet-pad) 10px; border-bottom:1px solid var(--border-standard); }
 .modal-meta-date { font-size:12px; color:var(--text-secondary); }
 .modal-meta-actions { display:flex; align-items:center; gap:16px; margin-left:auto; }
 .modal-meta-link { font-size:12px; color:var(--brand-blue); text-decoration:none; display:inline-flex; align-items:center; gap:4px; }
 .modal-meta-link:hover { text-decoration:underline; }
 .modal-meta-link svg { stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+/* Given more visual weight than View original RNS — a filled pill rather than
+   plain text — because this is the link most worth not missing on open: the
+   analyst's own next step (checking sell-side sentiment) before writing a note. */
+.modal-broker-link { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700;
+                      color:var(--brand-blue); background:rgba(71,118,186,0.10);
+                      border:1px solid rgba(71,118,186,0.35); border-radius:16px;
+                      padding:5px 12px 5px 10px; text-decoration:none; white-space:nowrap; }
+.modal-broker-link:hover { background:rgba(71,118,186,0.18); border-color:var(--brand-blue); }
+.modal-broker-link .msym { font-size:15px; display:block; }
+/* Prototype stand-in for the two dummy external links: rather than actually
+   navigating (or doing nothing, which reads as broken), a small toast confirms
+   what the real link would do and fades out on its own — no navigation, no
+   closing the sheet, no disruption to where the analyst was. */
+.dummy-toast {
+  position:fixed; left:50%; bottom:28px; transform:translate(-50%,12px);
+  z-index:900; display:flex; align-items:center; gap:8px;
+  background:var(--charcoal-black); color:var(--text-inv-primary);
+  font-size:13px; line-height:18px; font-weight:500;
+  padding:10px 16px; border-radius:8px; box-shadow:0 4px 18px rgba(0,0,0,0.28);
+  opacity:0; pointer-events:none; transition:opacity 0.18s ease, transform 0.18s ease;
+  white-space:nowrap;
+}
+.dummy-toast.is-visible { opacity:1; transform:translate(-50%,0); }
+.dummy-toast .msym { font-size:16px; color:#8FD19E; display:block; }
+@media (prefers-reduced-motion: reduce) { .dummy-toast { transition-duration:0.001ms; } }
 .modal-nav { display:flex; align-items:center; padding:10px var(--sheet-pad); border-top:1px solid var(--border-standard); gap:8px; }
 .modal-nav-count { font-size:12px; color:var(--text-secondary); flex:1; text-align:center; }
 .modal-nav-btn { padding:5px 14px; border:1px solid var(--border-input); border-radius:6px; background:none; font-size:12px; font-weight:600; cursor:pointer; color:var(--text-primary); transition:background 0.1s; }
@@ -1839,13 +1873,21 @@ body.sheet-open { overflow:hidden; }
     <div class="modal-meta">
       <span class="modal-meta-date" id="modal-date"></span>
       <div class="modal-meta-actions">
-        <a class="modal-meta-link" id="modal-view-rns" href="#" target="_blank" rel="noopener">
+        <a class="modal-broker-link" id="modal-broker-link" href="#" title="See sell-side broker commentary on this stock" onclick="return dummyExternalLink(event, 'Opens Research Tree in a new tab');">
+          <span class="msym" aria-hidden="true">insights</span> Broker notes
+        </a>
+        <a class="modal-meta-link" id="modal-view-rns" href="#" onclick="return dummyExternalLink(event, 'Opens original RNS in a new tab');">
           View original RNS <span class="msym" aria-hidden="true">open_in_new</span>
         </a>
       </div>
     </div>
     <div class="modal-summary" id="modal-summary">
-      <span class="modal-summary-label">Summary</span>
+      <div class="modal-summary-head">
+        <span class="modal-summary-label">Summary</span>
+        <button class="modal-copy-btn" id="modal-copy-btn" type="button" onclick="copySummary(this)" data-tip="Copy summary">
+          <span class="msym" aria-hidden="true">content_copy</span>
+        </button>
+      </div>
       <span id="modal-summary-text"></span>
     </div>
     <div class="modal-body"><div class="modal-body-inner" id="modal-body"></div></div>
@@ -1893,6 +1935,13 @@ body.sheet-open { overflow:hidden; }
     <a class="mrp-btn mrp-btn-secondary" href="#" onclick="return false;">Chart</a>
     <a class="mrp-btn mrp-btn-secondary" href="#" onclick="return false;">Add to Folio</a>
   </div>
+</div>
+
+<!-- Prototype-only confirmation toast for dummy external links (Broker notes,
+     View original RNS) — see dummyExternalLink() below. -->
+<div class="dummy-toast" id="dummy-toast" role="status" aria-live="polite">
+  <span class="msym" aria-hidden="true">open_in_new</span>
+  <span id="dummy-toast-text"></span>
 </div>
 
 <div class="sheet-scrim" id="sheet-scrim" hidden onclick="closeSheet()"></div>
@@ -2164,9 +2213,51 @@ function _renderRNSModal() {
   body.scrollTop = 0;
 
   document.getElementById('modal-view-rns').href = det.rnsUrl || '#';
+  document.getElementById('modal-broker-link').href = det.brokerUrl || '#';
   document.getElementById('modal-count').textContent = (_currentRnsIdx + 1) + ' of ' + _rnsOrder.length;
   document.getElementById('modal-prev').disabled = _currentRnsIdx === 0;
   document.getElementById('modal-next').disabled = _currentRnsIdx === _rnsOrder.length - 1;
+
+  // Reset copy feedback when the modal shows a different item's summary.
+  const copyBtn = document.getElementById('modal-copy-btn');
+  copyBtn.classList.remove('is-copied');
+  copyBtn.querySelector('.msym').textContent = 'content_copy';
+  copyBtn.setAttribute('data-tip', 'Copy summary');
+}
+
+function copySummary(btn) {
+  const text = document.getElementById('modal-summary-text').textContent || '';
+  if (!text) return;
+
+  const showCopied = () => {
+    btn.classList.add('is-copied');
+    btn.querySelector('.msym').textContent = 'check';
+    btn.setAttribute('data-tip', 'Copied!');
+    clearTimeout(btn._copyResetTimer);
+    btn._copyResetTimer = setTimeout(() => {
+      btn.classList.remove('is-copied');
+      btn.querySelector('.msym').textContent = 'content_copy';
+      btn.setAttribute('data-tip', 'Copy summary');
+    }, 1800);
+  };
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showCopied).catch(() => _fallbackCopy(text, showCopied));
+  } else {
+    _fallbackCopy(text, showCopied);
+  }
+}
+
+function _fallbackCopy(text, onDone) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch (e) { /* no-op — clipboard unavailable */ }
+  document.body.removeChild(ta);
+  onDone();
 }
 
 function navigateRNS(dir) {
@@ -2179,6 +2270,24 @@ function closeModal() {
 }
 function closeModalOnOverlay(e) {
   if (e.target === document.getElementById('rns-modal')) closeModal();
+}
+
+// Broker notes / View original RNS are placeholder links in this prototype —
+// no real destination exists for most rows. Rather than navigate nowhere (or
+// silently do nothing), confirm what the real link would do via a toast and
+// leave the bottom sheet exactly as it was.
+let _dummyToastTimer = null;
+function dummyExternalLink(e, message) {
+  e.preventDefault();
+  showDummyToast(message);
+  return false;
+}
+function showDummyToast(message) {
+  const toast = document.getElementById('dummy-toast');
+  document.getElementById('dummy-toast-text').textContent = message;
+  toast.classList.add('is-visible');
+  clearTimeout(_dummyToastTimer);
+  _dummyToastTimer = setTimeout(() => toast.classList.remove('is-visible'), 2400);
 }
 document.addEventListener('keydown', e => {
   if (document.getElementById('rns-modal').classList.contains('open')) {
